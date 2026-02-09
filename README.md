@@ -15,6 +15,7 @@ Note: Still unclear on whether to use the FOC for the policies or, as we do now,
 
 ### Hopenhayn (1992) Stationary Equilibrium
 
+| | |
 |---|---|
 | Entry cost (ce) | 0.0119 |
 | Exit rate | 0.0976 |
