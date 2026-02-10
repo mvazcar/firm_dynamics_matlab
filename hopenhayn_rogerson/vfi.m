@@ -63,16 +63,37 @@ while max(abs(Tv(:) - v(:))) > tol && iter <= maxiter
     iter = iter + 1 ;
 end
 
+% -----------------------------------------------------------------------
+% Value function iteration: fill Tv(ns x nn) one column at a time.
+%
+% For each current employment i_n:
+%   1. Build obj(i_s, i_nprime) = profit(s,n') - firing_cost(n,n') + beta*E[v(s,n')]
+%      - pi_mat is ns x nn (depends on s and n')
+%      - phi_mat(i_n,:) is 1 x nn, broadcast (repeated) ns times to ns x nn
+%      - beta*Ev is ns x nn (depends on s and n')
+%
+%   2. max(obj, [], 2) maximizes over columns (n') for each row (s),
+%      returning an ns x 1 vector: the best value for each s given this n.
+%
+%   3. That ns x 1 vector is stored in column i_n of Tv:
+%        Tv(:, i_n) = max(obj, [], 2)
+%      and the argmax gives the optimal n' index:
+%        npol_ind(:, i_n) = argmax over n'
+%
+% After looping over i_n = 1, ..., nn, the full ns x nn matrix Tv is filled.
+% Each entry Tv(i_s, i_n) = maximized value at state (s, n).
+% Each entry npol_ind(i_s, i_n) = index of optimal n' at state (s, n).
+%
 % Slow loop equivalent (for reference):
-%for i_n = 1:nn
-%  for i_s = 1:ns
-%    for i_nprime = 1:nn
-%      obj(i_s, i_nprime) = pi_mat(i_s, i_nprime) ...
-%                         - phi_mat(i_n, i_nprime) ...
-%                         + beta * Ev(i_s, i_nprime) ;
-%    end
-%    [Tv(i_s, i_n), npol_ind(i_s, i_n)] = max(obj(i_s, :)) ;
-%  end
-%end
+% for i_n = 1:nn
+%   for i_s = 1:ns
+%     for i_nprime = 1:nn
+%       obj(i_s, i_nprime) = pi_mat(i_s, i_nprime) - phi_mat(i_n, i_nprime) + beta * Ev(i_s, i_nprime) ;
+%     end
+%   [Tv(i_s, i_n), npol_ind(i_s, i_n)] = max(obj(i_s, :)) ;
+%   end
+% end
+% -----------------------------------------------------------------------
+
 
 f = v ;
