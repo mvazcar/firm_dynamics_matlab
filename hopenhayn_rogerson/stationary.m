@@ -3,6 +3,13 @@
 % This function takes in a structure of model parameters as input, solves
 % for the stationary equilibrium and returns the outcome.
 % Hopenhayn-Rogerson (1993): 2D distribution over (s, n).
+%
+% Index convention (matching HR93 notation):
+%   i_s      = index for current productivity s
+%   i_sprime = index for next-period productivity s'
+%   i_n      = index for current employment n
+%   i_nprime = index for next-period employment n' (the choice variable)
+%   i_nprime2 = second use of n' index (next period's choice, from next period's perspective)
 %--------------------------------------------------------------------------
 %##########################################################################
 
@@ -25,11 +32,11 @@ theta = params.theta ;
 % Solve for value function v and policy npol_ind
 [v, npol_ind] = vfi(F, pstar, wstar, cf, tau, params) ;
 
-% Exit cost for each nprime_k: nn x 1
+% Exit cost for each i_nprime: nn x 1
 phi_exit = tau * wstar * nvec ;
 
 % Entry cost: entrants have n = 0 = nvec(1), so phi_exit(1) = 0
-% Entrants with s_i stay if v(i, 1) >= 0
+% Entrants with i_s stay if v(i_s, 1) >= 0
 Gnew = G ;
 Gnew(v(:, 1) < 0) = 0 ;
 
@@ -42,7 +49,7 @@ if ce <= 0
     return
 end
 
-% Exit flag: firm at (s', nprime_k) exits if v(s', k) < -phi_exit(k)
+% Exit flag: firm at (i_sprime, i_nprime) exits if v(i_sprime, i_nprime) < -phi_exit(i_nprime)
 exit_flag = v < -phi_exit' ;   % ns x nn, logical
 
 % --- Distribution iteration ---
@@ -52,14 +59,15 @@ for iter = 1:5000
     mu_new = zeros(ns, nn) ;
 
     % --- Incumbents ---
-    for j = 1:nn
-        for i = 1:ns
-            if mu(i, j) > 0
-                k = npol_ind(i, j) ;          % this period's choice
-                for ip = 1:ns                  % next period's shock
-                    if ~exit_flag(ip, k)       % stays
-                        kp = npol_ind(ip, k) ; % next period's choice
-                        mu_new(ip, kp) = mu_new(ip, kp) + F(ip, i) * mu(i, j) ;
+    for i_n = 1:nn
+        for i_s = 1:ns
+            if mu(i_s, i_n) > 0
+                i_nprime = npol_ind(i_s, i_n) ;          % this period's labor choice
+                for i_sprime = 1:ns                       % next period's shock
+                    if ~exit_flag(i_sprime, i_nprime)     % stays
+                        i_nprime2 = npol_ind(i_sprime, i_nprime) ; % n' from next period's perspective
+                        mu_new(i_sprime, i_nprime2) = mu_new(i_sprime, i_nprime2) ...
+                            + F(i_sprime, i_s) * mu(i_s, i_n) ;
                     end
                 end
             end
@@ -68,10 +76,10 @@ for iter = 1:5000
 
     % --- Entrants ---
     % mstar entrants draw s from Gnew, have n_{-1} = 0 = nvec(1)
-    for i = 1:ns
-        if Gnew(i) > 0 && ~exit_flag(i, 1)
-            k = npol_ind(i, 1) ;
-            mu_new(i, k) = mu_new(i, k) + mstar * Gnew(i) ;
+    for i_s = 1:ns
+        if Gnew(i_s) > 0 && ~exit_flag(i_s, 1)
+            i_nprime = npol_ind(i_s, 1) ;
+            mu_new(i_s, i_nprime) = mu_new(i_s, i_nprime) + mstar * Gnew(i_s) ;
         end
     end
 
@@ -104,7 +112,7 @@ avg_fsize_n = (N_prod + cf * num_firms) / num_firms ;
 % Average startup size
 Gnew_mass = sum(Gnew) ;
 if Gnew_mass > 0
-    % Entrant at s_i with n=0 chooses nvec(npol_ind(i,1))
+    % Entrant at i_s with n=0 chooses nvec(npol_ind(i_s, 1))
     entrant_n = nvec(npol_ind(:, 1)) ;
     avg_stsize_n = sum((entrant_n + cf) .* Gnew) / Gnew_mass ;
 else
@@ -115,15 +123,16 @@ end
 startup_rate = mstar * Gnew_mass / num_firms ;
 
 % Exit rate: fraction of firms that exit
-% A firm at (s_i, n_j) exits next period at (s', k) with prob sum of F(ip,i)*exit_flag(ip,k)
+% A firm at (i_s, i_n) with choice i_nprime exits next period at (i_sprime, i_nprime)
+% with prob F(i_sprime, i_s) when exit_flag(i_sprime, i_nprime) = true
 exit_mass = 0 ;
-for j = 1:nn
-    for i = 1:ns
-        if mustar(i, j) > 0
-            k = npol_ind(i, j) ;
-            for ip = 1:ns
-                if exit_flag(ip, k)
-                    exit_mass = exit_mass + F(ip, i) * mustar(i, j) ;
+for i_n = 1:nn
+    for i_s = 1:ns
+        if mustar(i_s, i_n) > 0
+            i_nprime = npol_ind(i_s, i_n) ;
+            for i_sprime = 1:ns
+                if exit_flag(i_sprime, i_nprime)
+                    exit_mass = exit_mass + F(i_sprime, i_s) * mustar(i_s, i_n) ;
                 end
             end
         end
@@ -132,25 +141,25 @@ end
 exit_rate = exit_mass / num_firms ;
 
 % Job creation and destruction (cross-period reallocation)
-% A firm at (s_i, n_j) chose nprime = nvec(k) this period.
-% Next period it draws s' and, if it survives, chooses nvec(npol_ind(s', k)).
-% Turnover = |nvec(npol_ind(s', k)) - nvec(k)| weighted by F(s'|s) and mu.
+% A firm at (i_s, i_n) chose i_nprime = npol_ind(i_s, i_n) this period.
+% Next period it draws i_sprime and, if it survives, chooses npol_ind(i_sprime, i_nprime).
+% Turnover = |nvec(npol_ind(i_sprime, i_nprime)) - nvec(i_nprime)| weighted by transition prob and mu.
 job_creation = 0 ;
 job_destruction = 0 ;
-for j = 1:nn
-    for i = 1:ns
-        if mustar(i, j) > 0
-            k = npol_ind(i, j) ;           % this period's employment index
-            n_now = nvec(k) ;
-            for ip = 1:ns
-                if ~exit_flag(ip, k)        % firm survives
-                    kp = npol_ind(ip, k) ;  % next period's employment index
-                    dn = nvec(kp) - n_now ;
-                    job_creation    = job_creation    + max(0,  dn) * F(ip, i) * mustar(i, j) ;
-                    job_destruction = job_destruction + max(0, -dn) * F(ip, i) * mustar(i, j) ;
+for i_n = 1:nn
+    for i_s = 1:ns
+        if mustar(i_s, i_n) > 0
+            i_nprime = npol_ind(i_s, i_n) ;            % this period's labor choice
+            n_now = nvec(i_nprime) ;
+            for i_sprime = 1:ns
+                if ~exit_flag(i_sprime, i_nprime)       % firm survives
+                    i_nprime2 = npol_ind(i_sprime, i_nprime) ; % n' from next period's perspective
+                    dn = nvec(i_nprime2) - n_now ;
+                    job_creation    = job_creation    + max(0,  dn) * F(i_sprime, i_s) * mustar(i_s, i_n) ;
+                    job_destruction = job_destruction + max(0, -dn) * F(i_sprime, i_s) * mustar(i_s, i_n) ;
                 else
                     % exiting firm destroys all workers
-                    job_destruction = job_destruction + n_now * F(ip, i) * mustar(i, j) ;
+                    job_destruction = job_destruction + n_now * F(i_sprime, i_s) * mustar(i_s, i_n) ;
                 end
             end
         end
@@ -158,10 +167,10 @@ for j = 1:nn
 end
 
 % Add entry-related creation
-for i = 1:ns
-    if Gnew(i) > 0 && ~exit_flag(i, 1)
-        k = npol_ind(i, 1) ;
-        job_creation = job_creation + mstar * Gnew(i) * nvec(k) ;
+for i_s = 1:ns
+    if Gnew(i_s) > 0 && ~exit_flag(i_s, 1)
+        i_nprime = npol_ind(i_s, 1) ;
+        job_creation = job_creation + mstar * Gnew(i_s) * nvec(i_nprime) ;
     end
 end
 

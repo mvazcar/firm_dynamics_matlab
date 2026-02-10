@@ -1,5 +1,19 @@
 % This function takes model parameters as inputs, does the value function
 % iteration over (s, n) and returns the value function and policy indices.
+%
+% Index convention (matching HR93 notation):
+%   i_s      = index for current productivity s
+%   i_sprime = index for next-period productivity s'
+%   i_n      = index for current employment n
+%   i_nprime = index for next-period employment n' (the choice variable)
+%
+% Grids:
+%   svec(i_s)      = productivity level       (ns x 1)
+%   nvec(i_n)      = employment level          (nn x 1)
+%
+% Matrices returned:
+%   v(i_s, i_n)        = value function
+%   npol_ind(i_s, i_n) = index of optimal n' given state (s, n)
 
 function [f, npol_ind] = vfi(F, pstar, wstar, cf, tau, params)
 beta = params.beta ;
@@ -10,15 +24,17 @@ nn = params.nn ;
 tol = params.tol ;
 theta = params.theta ;
 
-% Precompute flow profit for each (s_i, nprime_k) pair: ns x nn
+% Precompute flow profit for each (i_s, i_nprime) pair: ns x nn
+% pi(s, nprime) = p * exp(s) * nprime^theta - w * nprime - w * cf
 pi_mat = pstar * exp(svec) .* nvec'.^theta - wstar * nvec' - wstar * cf ;
 
-% Firing cost for each (nprime_k, n_j) pair: nn x nn
-% phi_mat(k,j) = cost of going FROM nvec(j) TO nvec(k)
+% Firing cost: phi(n, nprime) = tau * w * max(0, n - nprime) as in HR93
+% Broadcasting: nvec (nn x 1) = rows = n, nvec' (1 x nn) = cols = nprime
+% phi_mat(i_n, i_nprime) = tau * w * max(0, n - nprime)
 phi_mat = tau * wstar * max(0, nvec - nvec') ;   % nn x nn
 
-% Exit cost for each nprime_k: nn x 1
-% phi_exit(k) = cost of exiting next period with nvec(k) workers
+% Exit cost: firing all workers when exiting
+% phi_exit(i_nprime) = tau * w * nvec(i_nprime)
 phi_exit = tau * wstar * nvec ;                   % nn x 1
 
 % Initialize
@@ -31,20 +47,32 @@ iter = 0 ;
 while max(abs(Tv(:) - v(:))) > tol && iter <= maxiter
     v = Tv ;
 
-    % Next-period value with exit option: max(v(s', k), -phi_exit(k))
+    % Exit option: max(v(i_sprime, i_nprime), -phi_exit(i_nprime))
     vmax = max(v, -phi_exit') ;                    % ns x nn
 
-    % Expected continuation: F' * vmax
+    % Expected continuation: E[vmax | s] = F' * vmax
     Ev = F' * vmax ;                                % ns x nn
 
-    % Maximize over nprime choice k, for each state (s_i, n_j)
-    for j = 1:nn
-        % obj(i, k) = pi_mat(i,k) - phi_mat(k,j) + beta * Ev(i,k)
-        obj = pi_mat - phi_mat(:, j)' + beta * Ev ;    % ns x nn
-        [Tv(:, j), npol_ind(:, j)] = max(obj, [], 2) ; % max over k
+    % Maximize over n' for each state (s, n)
+    for i_n = 1:nn
+        % obj(i_s, i_nprime) = pi(s, nprime) - phi(n, nprime) + beta * E[vmax(s, nprime)]
+        obj = pi_mat - repmat(phi_mat(i_n, :), ns, 1) + beta * Ev ;    % ns x nn, note the use of repmat to broadcast
+        [Tv(:, i_n), npol_ind(:, i_n)] = max(obj, [], 2) ; % max over i_nprime
     end
 
     iter = iter + 1 ;
 end
+
+% Slow loop equivalent (for reference):
+%for i_n = 1:nn
+%  for i_s = 1:ns
+%    for i_nprime = 1:nn
+%      obj(i_s, i_nprime) = pi_mat(i_s, i_nprime) ...
+%                         - phi_mat(i_n, i_nprime) ...
+%                         + beta * Ev(i_s, i_nprime) ;
+%    end
+%    [Tv(i_s, i_n), npol_ind(i_s, i_n)] = max(obj(i_s, :)) ;
+%  end
+%end
 
 f = v ;
